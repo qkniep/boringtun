@@ -4,6 +4,7 @@
 use super::{HandshakeInit, HandshakeResponse, PacketCookieReply};
 use crate::crypto::blake2s::Blake2s;
 use crate::crypto::chacha20poly1305::ChaCha20Poly1305;
+use crate::crypto::pqcrypto::*;
 use crate::crypto::x25519::*;
 use crate::noise::errors::WireGuardError;
 use crate::noise::make_array;
@@ -147,12 +148,14 @@ pub enum HandshakeState {
         hash: [u8; KEY_LEN],
         chaining_key: [u8; KEY_LEN],
         ephemeral_private: X25519EphemeralKey,
+        ephemeral_private_pq: PQSecretKey,
         time_sent: Instant,
     }, // We initiated the handshake
     InitReceived {
         hash: [u8; KEY_LEN],
         chaining_key: [u8; KEY_LEN],
         peer_ephemeral_public: X25519PublicKey,
+        peer_ephemeral_public_pq: PQPublicKey,
         peer_index: u32,
     }, // Handshake initiated by peer
     Expired, // Handshake was established too long ago (implies no handshake is in progress)
@@ -349,6 +352,9 @@ impl Handshake {
         let peer_index = packet.sender_idx;
         // msg.unencrypted_ephemeral = DH_PUBKEY(initiator.ephemeral_private)
         let peer_ephemeral_public = X25519PublicKey::from(packet.unencrypted_ephemeral);
+
+        let peer_ephemeral_public_pq = PQPublicKey::from(packet.unencrypted_ephemeral_pq);
+
         // initiator.hash = HASH(initiator.hash || msg.unencrypted_ephemeral)
         hash = HASH!(hash, peer_ephemeral_public.as_bytes());
         // temp = HMAC(initiator.chaining_key, msg.unencrypted_ephemeral)
@@ -408,6 +414,7 @@ impl Handshake {
             chaining_key,
             hash,
             peer_ephemeral_public,
+            peer_ephemeral_public_pq,
             peer_index,
         };
 
@@ -579,6 +586,7 @@ impl Handshake {
         let (message_type, rest) = dst.split_at_mut(4);
         let (sender_index, rest) = rest.split_at_mut(4);
         let (unencrypted_ephemeral, rest) = rest.split_at_mut(32);
+        let (unencrypted_ephemeral_pq, rest) = rest.split_at_mut(PQ_PUBLIC_KEY_SIZE);
         let (mut encrypted_static, rest) = rest.split_at_mut(32 + 16);
         let (mut encrypted_timestamp, _) = rest.split_at_mut(12 + 16);
 
@@ -592,6 +600,8 @@ impl Handshake {
         hash = HASH!(hash, self.params.peer_static_public.as_bytes());
         // initiator.ephemeral_private = DH_GENERATE()
         let ephemeral_private = X25519EphemeralKey::new();
+        // PQ_GENERATE_KEYPAIR()
+        let ephemeral_pq = PQKeyPair::new();
         // msg.message_type = 1
         // msg.reserved_zero = { 0, 0, 0 }
         message_type.copy_from_slice(&super::HANDSHAKE_INIT.to_le_bytes());
@@ -604,6 +614,11 @@ impl Handshake {
         // temp = HMAC(initiator.chaining_key, msg.unencrypted_ephemeral)
         // initiator.chaining_key = HMAC(temp, 0x1)
         chaining_key = HMAC!(HMAC!(chaining_key, unencrypted_ephemeral), [0x01]);
+
+        unencrypted_ephemeral_pq.copy_from_slice(&ephemeral_pq.public_key_bytes());
+        hash = HASH!(hash, unencrypted_ephemeral_pq);
+        chaining_key = HMAC!(HMAC!(chaining_key, unencrypted_ephemeral_pq), [0x01]);
+
         // temp = HMAC(initiator.chaining_key, DH(initiator.ephemeral_private, responder.static_public))
         let ephemeral_shared = ephemeral_private.shared_key(&self.params.peer_static_public)?;
         let temp = HMAC!(chaining_key, ephemeral_shared);
@@ -639,6 +654,7 @@ impl Handshake {
             chaining_key,
             hash,
             ephemeral_private,
+            ephemeral_private_pq: ephemeral_pq.secret_key,
             time_sent: time_now,
         };
 
@@ -654,13 +670,14 @@ impl Handshake {
         }
 
         let state = std::mem::replace(&mut self.state, HandshakeState::None);
-        let (mut chaining_key, mut hash, peer_ephemeral_public, peer_index) = match state {
+        let (mut chaining_key, mut hash, peer_ephemeral_public, peer_ephemeral_public_pq, peer_index) = match state {
             HandshakeState::InitReceived {
                 chaining_key,
                 hash,
                 peer_ephemeral_public,
+                peer_ephemeral_public_pq,
                 peer_index,
-            } => (chaining_key, hash, peer_ephemeral_public, peer_index),
+            } => (chaining_key, hash, peer_ephemeral_public, peer_ephemeral_public_pq, peer_index),
             _ => {
                 panic!("Unexpected attempt to call send_handshake_response");
             }
@@ -670,6 +687,7 @@ impl Handshake {
         let (sender_index, rest) = rest.split_at_mut(4);
         let (receiver_index, rest) = rest.split_at_mut(4);
         let (unencrypted_ephemeral, rest) = rest.split_at_mut(32);
+        let (ephemeral_encaps, rest) = rest.split_at_mut(PQ_CIPHERTEXT_SIZE);
         let (mut encrypted_nothing, _) = rest.split_at_mut(16);
 
         // responder.ephemeral_private = DH_GENERATE()
@@ -690,6 +708,15 @@ impl Handshake {
         let temp = HMAC!(chaining_key, unencrypted_ephemeral);
         // responder.chaining_key = HMAC(temp, 0x1)
         chaining_key = HMAC!(temp, [0x01]);
+
+        let (ciphertext, shared_secret) = peer_ephemeral_public_pq.encaps();
+        chaining_key = HMAC!(chaining_key, ciphertext.as_bytes());
+        ephemeral_encaps.copy_from_slice(ciphertext.as_bytes());
+        hash = HASH!(hash, ephemeral_encaps);
+        // eqeq
+        let temp = HMAC!(chaining_key, shared_secret.as_bytes());
+        chaining_key = HMAC!(temp, [0x01]);
+
         // temp = HMAC(responder.chaining_key, DH(responder.ephemeral_private, initiator.ephemeral_public))
         let ephemeral_shared = ephemeral_private.shared_key(&peer_ephemeral_public)?;
         let temp = HMAC!(chaining_key, &ephemeral_shared[..]);

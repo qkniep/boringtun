@@ -9,6 +9,7 @@ mod session;
 mod tests;
 mod timers;
 
+use crate::crypto::pqcrypto::*;
 use crate::crypto::x25519::*;
 use crate::noise::errors::WireGuardError;
 use crate::noise::handshake::Handshake;
@@ -100,8 +101,8 @@ const HANDSHAKE_RESP: MessageType = 2;
 const COOKIE_REPLY: MessageType = 3;
 const DATA: MessageType = 4;
 
-const HANDSHAKE_INIT_SZ: usize = 148;
-const HANDSHAKE_RESP_SZ: usize = 92;
+const HANDSHAKE_INIT_SZ: usize = 148 + PQ_PUBLIC_KEY_SIZE;
+const HANDSHAKE_RESP_SZ: usize = 92 + PQ_CIPHERTEXT_SIZE;
 const COOKIE_REPLY_SZ: usize = 64;
 const DATA_OVERHEAD_SZ: usize = 32;
 
@@ -109,6 +110,7 @@ const DATA_OVERHEAD_SZ: usize = 32;
 pub struct HandshakeInit<'a> {
     sender_idx: u32,
     unencrypted_ephemeral: &'a [u8],
+    unencrypted_ephemeral_pq: &'a [u8],
     encrypted_static: &'a [u8],
     encrypted_timestamp: &'a [u8],
 }
@@ -118,6 +120,7 @@ pub struct HandshakeResponse<'a> {
     sender_idx: u32,
     pub receiver_idx: u32,
     unencrypted_ephemeral: &'a [u8],
+    ephemeral_encaps: &'a [u8],
     encrypted_nothing: &'a [u8],
 }
 
@@ -294,14 +297,18 @@ impl Tunn {
             (HANDSHAKE_INIT, HANDSHAKE_INIT_SZ) => Packet::HandshakeInit(HandshakeInit {
                 sender_idx: u32::from_le_bytes(make_array(&src[4..8])),
                 unencrypted_ephemeral: &src[8..40],
-                encrypted_static: &src[40..88],
-                encrypted_timestamp: &src[88..116],
+                // TODO: make prettier
+                unencrypted_ephemeral_pq: &src[40..40+PQ_PUBLIC_KEY_SIZE],
+                encrypted_static: &src[40+PQ_PUBLIC_KEY_SIZE..88+PQ_PUBLIC_KEY_SIZE],
+                encrypted_timestamp: &src[88+PQ_PUBLIC_KEY_SIZE..116+PQ_PUBLIC_KEY_SIZE],
             }),
             (HANDSHAKE_RESP, HANDSHAKE_RESP_SZ) => Packet::HandshakeResponse(HandshakeResponse {
                 sender_idx: u32::from_le_bytes(make_array(&src[4..8])),
                 receiver_idx: u32::from_le_bytes(make_array(&src[8..12])),
                 unencrypted_ephemeral: &src[12..44],
-                encrypted_nothing: &src[44..60],
+                // TODO: make prettier
+                ephemeral_encaps: &src[44..44+PQ_CIPHERTEXT_SIZE],
+                encrypted_nothing: &src[44+PQ_CIPHERTEXT_SIZE..60+PQ_CIPHERTEXT_SIZE],
             }),
             (COOKIE_REPLY, COOKIE_REPLY_SZ) => Packet::PacketCookieReply(PacketCookieReply {
                 receiver_idx: u32::from_le_bytes(make_array(&src[4..8])),
