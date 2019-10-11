@@ -6,6 +6,18 @@
 
 use std::fmt;
 
+#[link(name = "oqs")]
+extern {
+    fn OQS_KEM_kyber_512_cca_kem_keypair(public_key: *mut u8,
+                                         secret_key: *mut u8);
+    fn OQS_KEM_kyber_512_cca_kem_encaps(ciphertext: *mut u8,
+                                        shared_secret: *mut u8,
+                                        public_key: *const u8);
+    fn OQS_KEM_kyber_512_cca_kem_decaps(shared_secret: *mut u8,
+                                        ciphertext: *const u8,
+                                        secret_key: *const u8);
+}
+
 
 pub const PQ_SECRET_KEY_SIZE: usize = 1632;
 pub const PQ_PUBLIC_KEY_SIZE: usize = 736;
@@ -21,6 +33,10 @@ impl PQPublicKey {
     pub fn encaps(&self) -> (PQCiphertext, PQSharedSecret) {
         unimplemented!()
             // FFI *_encaps()
+    }
+
+    pub fn to_raw_ptr(&mut self) -> *mut u8 {
+        &mut self.bytes[0]
     }
 }
 
@@ -42,6 +58,12 @@ impl<'a> From<&'a [u8]> for PQPublicKey {
 #[repr(C)]
 pub struct PQSecretKey {
     bytes: [u8; PQ_SECRET_KEY_SIZE],
+}
+
+impl PQSecretKey {
+    pub fn to_raw_ptr(&mut self) -> *mut u8 {
+        &mut self.bytes[0]
+    }
 }
 
 impl fmt::Debug for PQSecretKey {
@@ -79,14 +101,19 @@ impl PQSharedSecret {
 
 #[repr(C)]
 pub struct PQKeyPair {
-    pub secret_key: PQSecretKey,
     pub public_key: PQPublicKey,
+    pub secret_key: PQSecretKey,
 }
 
 impl PQKeyPair {
     pub fn new() -> PQKeyPair {
-        unimplemented!()
-            // FFI *_keygen()
+        let mut public_key = PQPublicKey { bytes: [0; PQ_PUBLIC_KEY_SIZE] };
+        let mut secret_key = PQSecretKey { bytes: [0; PQ_SECRET_KEY_SIZE] };
+        unsafe {
+            OQS_KEM_kyber_512_cca_kem_keypair(public_key.to_raw_ptr(),
+                                              secret_key.to_raw_ptr());
+        }
+        PQKeyPair { public_key, secret_key }
     }
 
     pub fn public_key_bytes(&self) -> &[u8] {
