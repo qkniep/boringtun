@@ -8,6 +8,7 @@ extern crate test;
 mod tests {
     use boringtun::crypto::blake2s::*;
     use boringtun::crypto::chacha20poly1305::*;
+    use boringtun::crypto::pqcrypto::*;
     use boringtun::crypto::x25519::*;
     use test::{black_box, Bencher};
 
@@ -27,6 +28,35 @@ mod tests {
 
         b.iter(|| {
             black_box(secret_key.shared_key(&public_key));
+        });
+    }
+
+    #[bench]
+    fn bench_pq_keypair(b: &mut Bencher) {
+        b.iter(|| {
+            let keypair = black_box(PQKeyPair::new());
+        });
+    }
+
+    #[bench]
+    fn bench_pq_encaps(b: &mut Bencher) {
+        let keypair = PQKeyPair::new();
+        let public_key = keypair.public_key;
+
+        b.iter(|| {
+            black_box(public_key.encaps());
+        });
+    }
+
+    #[bench]
+    fn bench_pq_decaps(b: &mut Bencher) {
+        let keypair = PQKeyPair::new();
+        let secret_key = keypair.secret_key;
+        let public_key = keypair.public_key;
+        let (ciphertext, _) = public_key.encaps();
+
+        b.iter(|| {
+            black_box(ciphertext.decaps(&secret_key));
         });
     }
 

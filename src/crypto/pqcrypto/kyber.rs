@@ -31,12 +31,18 @@ pub struct PQPublicKey {
 
 impl PQPublicKey {
     pub fn encaps(&self) -> (PQCiphertext, PQSharedSecret) {
-        unimplemented!()
-            // FFI *_encaps()
+        let mut ciphertext = PQCiphertext { bytes: [0; PQ_CIPHERTEXT_SIZE] };
+        let mut shared_secret = PQSharedSecret { bytes: [0; PQ_SHARED_KEY_SIZE] };
+        unsafe {
+            OQS_KEM_kyber_512_cca_kem_encaps(&mut ciphertext.bytes[0],
+                                             &mut shared_secret.bytes[0],
+                                             &self.bytes[0]);
+        }
+        (ciphertext, shared_secret)
     }
 
-    pub fn to_raw_ptr(&mut self) -> *mut u8 {
-        &mut self.bytes[0]
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.bytes[..]
     }
 }
 
@@ -60,12 +66,6 @@ pub struct PQSecretKey {
     bytes: [u8; PQ_SECRET_KEY_SIZE],
 }
 
-impl PQSecretKey {
-    pub fn to_raw_ptr(&mut self) -> *mut u8 {
-        &mut self.bytes[0]
-    }
-}
-
 impl fmt::Debug for PQSecretKey {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         self.bytes[..].fmt(formatter)
@@ -78,15 +78,30 @@ pub struct PQCiphertext {
 }
 
 impl PQCiphertext {
-    pub fn decaps(&self, secret_key: PQSecretKey) -> (PQSharedSecret) {
-        unimplemented!()
-            // FFI *_decaps()
+    pub fn decaps(&self, secret_key: &PQSecretKey) -> PQSharedSecret {
+        let mut shared_secret = PQSharedSecret { bytes: [0; PQ_SHARED_KEY_SIZE] };
+        unsafe {
+            OQS_KEM_kyber_512_cca_kem_decaps(&mut shared_secret.bytes[0],
+                                             &self.bytes[0],
+                                             &secret_key.bytes[0]);
+        }
+        shared_secret
     }
 
     pub fn as_bytes(&self) -> &[u8] {
         &self.bytes[..]
     }
 }
+
+/// Will panic if the slice.len() != PQ_CIPHERTEXT_SIZE
+impl<'a> From<&'a [u8]> for PQCiphertext {
+    fn from(slice: &[u8]) -> Self {
+        let mut bytes = [0u8; PQ_CIPHERTEXT_SIZE];
+        bytes[..].copy_from_slice(slice);
+        PQCiphertext { bytes }
+    }
+}
+
 
 #[repr(C)]
 pub struct PQSharedSecret {
@@ -110,9 +125,10 @@ impl PQKeyPair {
         let mut public_key = PQPublicKey { bytes: [0; PQ_PUBLIC_KEY_SIZE] };
         let mut secret_key = PQSecretKey { bytes: [0; PQ_SECRET_KEY_SIZE] };
         unsafe {
-            OQS_KEM_kyber_512_cca_kem_keypair(public_key.to_raw_ptr(),
-                                              secret_key.to_raw_ptr());
+            OQS_KEM_kyber_512_cca_kem_keypair(&mut public_key.bytes[0],
+                                              &mut secret_key.bytes[0]);
         }
+        //println!("PUBLIC PQ KEY:\n{:?}\n\nSECRET PQ KEY:\n{:?}", public_key, secret_key);
         PQKeyPair { public_key, secret_key }
     }
 
