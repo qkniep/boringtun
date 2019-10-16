@@ -22,6 +22,8 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
+const PQ_CRYPTO_LEVEL: u64 = 1;
+
 const PEER_HANDSHAKE_RATE_LIMIT: u64 = 10; // The default value to use for rate limiting, when no other rate limiter is defined
 
 const IPV4_MIN_HEADER_SIZE: usize = 20;
