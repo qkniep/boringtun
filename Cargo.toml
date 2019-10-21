@@ -26,13 +26,26 @@ clap = { version = "2.32", default-features=false, features = ["suggestions"] }
 [target.'cfg(target_os="android")'.dependencies]
 jni = "0.10"
 
+[dev-dependencies]
+criterion = "0.3"
+
 [lib]
 crate-type = ["lib", "staticlib", "dylib"]
+bench = false
 
 [[bin]]
 name = "boringtun"
 path = "src/main.rs"
+bench = false
 
 [[example]]
 name = "benchmarks"
 path = "src/benchmarks_example.rs"
+
+[[bench]]
+name = "cloudflare"
+harness = false
+
+[[bench]]
+name = "mybench"
+harness = false

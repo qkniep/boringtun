@@ -1,8 +1,8 @@
 // Copyright (c) 2019 Cloudflare, Inc. All rights reserved.
 // SPDX-License-Identifier: BSD-3-Clause
 
-#[cfg(test)]
-mod tests {
+//#[cfg(test)]
+pub mod tests {
     use super::super::*;
     use crate::crypto::x25519::*;
     use base64::encode;
@@ -183,7 +183,7 @@ mod tests {
             None,
         )
         .unwrap();
-        peer.set_logger(logger, Verbosity::Debug);
+        peer.set_logger(logger, Verbosity::None);  // TODO: change back to Verbosity::Debug
 
         let peer: Arc<Box<Tunn>> = Arc::from(peer);
 
@@ -337,8 +337,15 @@ mod tests {
         (s_iface, c_iface, close)
     }
 
-    #[test]
-    fn wireguard_handshake() {
+    /*#[bench]
+    fn bench_handshake(b: &mut Bencher) {
+        b.iter(|| {
+            black_box(wireguard_handshake());
+        });
+    }*/
+
+    //#[test]
+    pub fn wireguard_handshake() {
         // Test the connection is successfully established and some packets are passed around
         {
             let (peer_iface_socket_sender, client_iface_socket_sender, close) =
@@ -357,17 +364,18 @@ mod tests {
                 write_ipv4_packet(&peer_iface_socket_sender, &data_string);
             });
 
-            for _i in 0..64 {
+            /*for _i in 0..64 {
                 write_ipv4_packet(&client_iface_socket_sender, b"test");
                 let response = read_ipv4_packet(&client_iface_socket_sender);
                 assert_eq!(&response, b"TEST");
             }
 
-            for _i in 0..64 {
+            for _i in 0..64 {*/
+            //for _i in 0..2 {
                 write_ipv4_packet(&client_iface_socket_sender, b"check");
                 let response = read_ipv4_packet(&client_iface_socket_sender);
                 assert_eq!(&response, b"CHECK");
-            }
+            //}
 
             close.store(true, Ordering::Relaxed);
         }

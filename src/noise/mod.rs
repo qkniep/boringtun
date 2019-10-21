@@ -6,7 +6,7 @@ pub mod handshake;
 pub mod rate_limiter;
 
 mod session;
-mod tests;
+pub mod tests;
 mod timers;
 
 use crate::crypto::pqcrypto::*;

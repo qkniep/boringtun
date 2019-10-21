@@ -361,6 +361,7 @@ impl Handshake {
             [0x01]
         );
 
+        // PQ: read eq
         let peer_ephemeral_public_pq = PQPublicKey::from(packet.unencrypted_ephemeral_pq);
         hash = HASH!(hash, peer_ephemeral_public_pq.as_bytes());
         chaining_key = HMAC!(
@@ -420,6 +421,7 @@ impl Handshake {
             hash,
             peer_ephemeral_public,
             peer_ephemeral_public_pq,
+            //peer_ephemeral_public_pq: PQPublicKey { bytes: [0; PQ_PUBLIC_KEY_SIZE] },
             peer_index,
         };
 
@@ -475,7 +477,7 @@ impl Handshake {
         let shared_secret = ciphertext.decaps(&ephemeral_private_pq);
         chaining_key = HMAC!(chaining_key, ciphertext.as_bytes());
         hash = HASH!(hash, ciphertext.as_bytes());
-        // eqeq
+        // PQ: eqeq
         let temp = HMAC!(chaining_key, shared_secret.as_bytes());
         chaining_key = HMAC!(temp, [0x01]);
 
@@ -633,7 +635,7 @@ impl Handshake {
         // initiator.chaining_key = HMAC(temp, 0x1)
         chaining_key = HMAC!(HMAC!(chaining_key, unencrypted_ephemeral), [0x01]);
 
-        // eq
+        // PQ: eq
         unencrypted_ephemeral_pq.copy_from_slice(&ephemeral_pq.public_key_bytes());
         hash = HASH!(hash, unencrypted_ephemeral_pq);
         chaining_key = HMAC!(HMAC!(chaining_key, unencrypted_ephemeral_pq), [0x01]);
@@ -674,6 +676,7 @@ impl Handshake {
             hash,
             ephemeral_private,
             ephemeral_private_pq: ephemeral_pq.secret_key,
+            //ephemeral_private_pq: PQSecretKey { bytes: [0; PQ_SECRET_KEY_SIZE] },
             time_sent: time_now,
         };
 
@@ -733,7 +736,7 @@ impl Handshake {
         chaining_key = HMAC!(chaining_key, ciphertext.as_bytes());
         ephemeral_encaps.copy_from_slice(ciphertext.as_bytes());
         hash = HASH!(hash, ephemeral_encaps);
-        // eqeq
+        // PQ: eqeq
         let temp = HMAC!(chaining_key, shared_secret.as_bytes());
         chaining_key = HMAC!(temp, [0x01]);
 

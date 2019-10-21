@@ -11,7 +11,7 @@ pub use kyber768::*;
 
 #[repr(C)]
 pub struct PQPublicKey {
-    bytes: [u8; PQ_PUBLIC_KEY_SIZE],
+    pub bytes: [u8; PQ_PUBLIC_KEY_SIZE],
 }
 
 impl PQPublicKey {
@@ -48,7 +48,7 @@ impl<'a> From<&'a [u8]> for PQPublicKey {
 
 #[repr(C)]
 pub struct PQSecretKey {
-    bytes: [u8; PQ_SECRET_KEY_SIZE],
+    pub bytes: [u8; PQ_SECRET_KEY_SIZE],
 }
 
 impl fmt::Debug for PQSecretKey {
