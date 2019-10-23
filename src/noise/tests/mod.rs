@@ -337,13 +337,6 @@ pub mod tests {
         (s_iface, c_iface, close)
     }
 
-    /*#[bench]
-    fn bench_handshake(b: &mut Bencher) {
-        b.iter(|| {
-            black_box(wireguard_handshake());
-        });
-    }*/
-
     //#[test]
     pub fn wireguard_handshake() {
         // Test the connection is successfully established and some packets are passed around
