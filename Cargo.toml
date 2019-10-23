@@ -8,6 +8,12 @@ readme = "README.md"
 repository = "https://github.com/cloudflare/boringtun"
 edition = "2018"
 
+[features]
+pqlvl0 = []
+pqlvl1 = []
+pqlvl2 = []
+pqlvl3 = []
+
 [dependencies]
 base64 = "0.9"
 hex = "0.3"

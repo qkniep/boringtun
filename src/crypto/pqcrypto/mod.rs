@@ -51,6 +51,12 @@ pub struct PQSecretKey {
     pub bytes: [u8; PQ_SECRET_KEY_SIZE],
 }
 
+impl PQSecretKey {
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.bytes[..]
+    }
+}
+
 impl fmt::Debug for PQSecretKey {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         self.bytes[..].fmt(formatter)

@@ -5,6 +5,7 @@
 pub mod tests {
     use super::super::*;
     use crate::crypto::x25519::*;
+    use crate::crypto::pqcrypto::*;
     use base64::encode;
     use std::fs;
     use std::fs::File;
@@ -306,10 +307,22 @@ pub mod tests {
         (sock_a, sock_b)
     }
 
+    #[cfg(not(feature = "pqlvl2"))]
     fn key_pair() -> (String, String) {
         let secret_key = X25519SecretKey::new();
         let public_key = secret_key.public_key();
         (encode(secret_key.as_bytes()), encode(public_key.as_bytes()))
+    }
+
+    #[cfg(feature = "pqlvl2")]
+    fn key_pair() -> (String, String, String, String) {
+        let secret_key = X25519SecretKey::new();
+        let public_key = secret_key.public_key();
+        let pq_key_pair = PQKeyPair::new();
+
+        (encode(secret_key.as_bytes()), encode(public_key.as_bytes()),
+         encode(pq_key_pair.secret_key.as_bytes()),
+         encode(pq_key_pair.public_key.as_bytes()))
     }
 
     fn wireguard_test_pair() -> (UdpSocket, UdpSocket, Arc<AtomicBool>) {
@@ -318,23 +331,52 @@ pub mod tests {
         let server_pair = key_pair();
         let client_pair = key_pair();
 
-        let s_iface = wireguard_test_peer(
-            s_sock,
-            &server_pair.0,
-            &client_pair.1,
-            Box::new(|e: &str| eprintln!("server: {}", e)),
-            close.clone(),
-        );
+        #[cfg(not(feature = "pqlvl2"))] {
+            let s_iface = wireguard_test_peer(
+                s_sock,
+                &server_pair.0,
+                &client_pair.1,
+                Box::new(|e: &str| eprintln!("server: {}", e)),
+                close.clone(),
+            );
 
-        let c_iface = wireguard_test_peer(
-            c_sock,
-            &client_pair.0,
-            &server_pair.1,
-            Box::new(|e: &str| eprintln!("client: {}", e)),
-            close.clone(),
-        );
+            let c_iface = wireguard_test_peer(
+                c_sock,
+                &client_pair.0,
+                &server_pair.1,
+                Box::new(|e: &str| eprintln!("client: {}", e)),
+                close.clone(),
+            );
 
-        (s_iface, c_iface, close)
+            (s_iface, c_iface, close)
+        }
+
+        #[cfg(feature = "pqlvl2")] {
+            let s_iface = wireguard_test_peer(
+                s_sock,
+                &server_pair.0,
+                &server_pair.2,
+                &server_pair.3,
+                &client_pair.1,
+                &client_pair.3,
+                Box::new(|e: &str| eprintln!("server: {}", e)),
+                close.clone(),
+            );
+
+            let c_iface = wireguard_test_peer(
+                c_sock,
+                &client_pair.0,
+                &client_pair.2,
+                &client_pair.3,
+                &server_pair.1,
+                &server_pair.3,
+                Box::new(|e: &str| eprintln!("client: {}", e)),
+                close.clone(),
+            );
+
+            (s_iface, c_iface, close)
+        }
+
     }
 
     //#[test]

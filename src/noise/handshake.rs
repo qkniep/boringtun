@@ -133,8 +133,14 @@ impl Tai64N {
 // Parameters used by the noise protocol
 struct NoiseParams {
     static_public: Arc<X25519PublicKey>,      // Our static public key
+    #[cfg(feature = "pqlvl2")]
+    static_public_pq: Arc<PQPublicKey>,
     static_private: Arc<X25519SecretKey>,     // Our static private key
+    #[cfg(feature = "pqlvl2")]
+    static_private_pq: Arc<PQSecretKey>,
     peer_static_public: Arc<X25519PublicKey>, // Static public key of the other party
+    #[cfg(feature = "pqlvl2")]
+    peer_static_public_pq: Arc<PQPublicKey>,
     static_shared: [u8; KEY_LEN], // A shared key = DH(static_private, peer_static_public)
     sending_mac1_key: [u8; KEY_LEN], // A pre-computation of HASH("mac1----", peer_static_public) for this peer
     preshared_key: Option<[u8; KEY_LEN]>, // An optional preshared key
@@ -148,6 +154,7 @@ pub enum HandshakeState {
         hash: [u8; KEY_LEN],
         chaining_key: [u8; KEY_LEN],
         ephemeral_private: X25519EphemeralKey,
+        #[cfg(feature = "pqlvl1")]
         ephemeral_private_pq: PQSecretKey,
         time_sent: Instant,
     }, // We initiated the handshake
@@ -155,6 +162,7 @@ pub enum HandshakeState {
         hash: [u8; KEY_LEN],
         chaining_key: [u8; KEY_LEN],
         peer_ephemeral_public: X25519PublicKey,
+        #[cfg(feature = "pqlvl1")]
         peer_ephemeral_public_pq: PQPublicKey,
         peer_index: u32,
     }, // Handshake initiated by peer
@@ -224,6 +232,7 @@ pub fn parse_handshake_anon(
 }
 
 impl NoiseParams {
+    #[cfg(not(feature = "pqlvl2"))]
     /// New noise params struct from our secret key, peers public key, and optional preshared key
     fn new(
         static_private: Arc<X25519SecretKey>,
@@ -239,6 +248,34 @@ impl NoiseParams {
             static_public,
             static_private,
             peer_static_public,
+            static_shared,
+            sending_mac1_key: initial_sending_mac_key,
+            preshared_key,
+        })
+    }
+
+    #[cfg(feature = "pqlvl2")]
+    /// New noise params struct from our secret key, peers public key, and optional preshared key
+    fn new(
+        static_private: Arc<X25519SecretKey>,
+        static_private_pq: Arc<PQSecretKey>,
+        static_public: Arc<X25519PublicKey>,
+        static_public_pq: Arc<PQPublicKey>,
+        peer_static_public: Arc<X25519PublicKey>,
+        peer_static_public_pq: Arc<PQPublicKey>,
+        preshared_key: Option<[u8; 32]>,
+    ) -> Result<NoiseParams, WireGuardError> {
+        let static_shared = static_private.shared_key(&peer_static_public)?;
+
+        let initial_sending_mac_key = HASH!(LABEL_MAC1, peer_static_public.as_bytes());
+
+        Ok(NoiseParams {
+            static_public,
+            static_public_pq,
+            static_private,
+            static_private_pq,
+            peer_static_public,
+            peer_static_public_pq,
             static_shared,
             sending_mac1_key: initial_sending_mac_key,
             preshared_key,
@@ -264,6 +301,7 @@ impl NoiseParams {
 }
 
 impl Handshake {
+    #[cfg(not(feature = "pqlvl2"))]
     pub(crate) fn new(
         static_private: Arc<X25519SecretKey>,
         static_public: Arc<X25519PublicKey>,
@@ -275,6 +313,38 @@ impl Handshake {
             static_private,
             static_public,
             peer_static_public,
+            preshared_key,
+        )?;
+
+        Ok(Handshake {
+            params,
+            next_index: global_idx,
+            state: HandshakeState::None,
+            last_handshake_timestamp: Tai64N::zero(),
+            stamper: TimeStamper::new(),
+            cookies: Default::default(),
+            last_rtt: None,
+        })
+    }
+
+    #[cfg(feature = "pqlvl2")]
+    pub(crate) fn new(
+        static_private: Arc<X25519SecretKey>,
+        static_private_pq: Arc<PQSecretKey>,
+        static_public: Arc<X25519PublicKey>,
+        static_public_pq: Arc<PQPublicKey>,
+        peer_static_public: Arc<X25519PublicKey>,
+        peer_static_public_pq: Arc<PQPublicKey>,
+        global_idx: u32,
+        preshared_key: Option<[u8; 32]>,
+    ) -> Result<Handshake, WireGuardError> {
+        let params = NoiseParams::new(
+            static_private,
+            static_private_pq,
+            static_public,
+            static_public_pq,
+            peer_static_public,
+            peer_static_public_pq,
             preshared_key,
         )?;
 
@@ -361,13 +431,17 @@ impl Handshake {
             [0x01]
         );
 
-        // PQ: read eq
-        let peer_ephemeral_public_pq = PQPublicKey::from(packet.unencrypted_ephemeral_pq);
-        hash = HASH!(hash, peer_ephemeral_public_pq.as_bytes());
-        chaining_key = HMAC!(
-            HMAC!(chaining_key, peer_ephemeral_public_pq.as_bytes()),
-            [0x01]
-        );
+        #[cfg(feature = "pqlvl1")]
+        let peer_ephemeral_public_pq;
+        #[cfg(feature = "pqlvl1")] {
+            // PQ: read eq
+            peer_ephemeral_public_pq = PQPublicKey::from(packet.unencrypted_ephemeral_pq);
+            hash = HASH!(hash, peer_ephemeral_public_pq.as_bytes());
+            chaining_key = HMAC!(
+                HMAC!(chaining_key, peer_ephemeral_public_pq.as_bytes()),
+                [0x01]
+            );
+        }
 
         // temp = HMAC(initiator.chaining_key, DH(initiator.ephemeral_private, responder.static_public))
         let ephemeral_shared = self
@@ -420,6 +494,7 @@ impl Handshake {
             chaining_key,
             hash,
             peer_ephemeral_public,
+            #[cfg(feature = "pqlvl1")]
             peer_ephemeral_public_pq,
             //peer_ephemeral_public_pq: PQPublicKey { bytes: [0; PQ_PUBLIC_KEY_SIZE] },
             peer_index,
@@ -434,12 +509,44 @@ impl Handshake {
     ) -> Result<Session, WireGuardError> {
         let state = std::mem::replace(&mut self.state, HandshakeState::None);
 
+        /*let mut chaining_key;
+        let mut hash;
+        let ephemeral_private;
+        #[cfg(feature = "pqlvl1")]
+        let ephemeral_private_pq;
+        let local_index;
+        let time_sent;
+        match state {
+            HandshakeState::InitSent {
+                ck, h, e_priv,
+                #[cfg(feature = "pqlvl1")]
+                e_priv_pq,
+                li, ts,
+                ..
+            } => {
+                chaining_key = ck;
+                hash = h;
+                ephemeral_private = e_priv;
+                #[cfg(feature = "pqlvl1")]
+                {
+                    ephemeral_private_pq = e_priv_eq;
+                }
+                local_index = li;
+                time_sent = ts;
+            },
+            _ => {
+                std::mem::replace(&mut self.state, state);
+                return Err(WireGuardError::UnexpectedPacket);
+            }
+
+        }*/
         let (mut chaining_key, mut hash, ephemeral_private,
              ephemeral_private_pq, local_index, time_sent) = match state {
             HandshakeState::InitSent {
                 chaining_key,
                 hash,
                 ephemeral_private,
+                #[cfg(feature = "pqlvl1")]
                 ephemeral_private_pq,
                 local_index,
                 time_sent,
@@ -448,6 +555,9 @@ impl Handshake {
                 chaining_key,
                 hash,
                 ephemeral_private,
+                #[cfg(feature = "pqlvl0")]
+                PQSecretKey { bytes: [0; PQ_SECRET_KEY_SIZE] },
+                #[cfg(feature = "pqlvl1")]
                 ephemeral_private_pq,
                 local_index,
                 time_sent,
@@ -472,14 +582,16 @@ impl Handshake {
         // responder.chaining_key = HMAC(temp, 0x1)
         chaining_key = HMAC!(temp, [0x01]);
 
-        // PQ
-        let ciphertext = PQCiphertext::from(packet.ephemeral_encaps);
-        let shared_secret = ciphertext.decaps(&ephemeral_private_pq);
-        chaining_key = HMAC!(chaining_key, ciphertext.as_bytes());
-        hash = HASH!(hash, ciphertext.as_bytes());
-        // PQ: eqeq
-        let temp = HMAC!(chaining_key, shared_secret.as_bytes());
-        chaining_key = HMAC!(temp, [0x01]);
+        #[cfg(feature = "pqlvl1")] {
+            // PQ
+            let ciphertext = PQCiphertext::from(packet.ephemeral_encaps);
+            let shared_secret = ciphertext.decaps(&ephemeral_private_pq);
+            chaining_key = HMAC!(chaining_key, ciphertext.as_bytes());
+            hash = HASH!(hash, ciphertext.as_bytes());
+            // PQ: eqeq
+            let temp = HMAC!(chaining_key, shared_secret.as_bytes());
+            chaining_key = HMAC!(temp, [0x01]);
+        }
 
         // temp = HMAC(responder.chaining_key, DH(responder.ephemeral_private, initiator.ephemeral_public))
         let ephemeral_shared = ephemeral_private.shared_key(&unencrypted_ephemeral)?;
@@ -606,6 +718,7 @@ impl Handshake {
         let (message_type, rest) = dst.split_at_mut(4);
         let (sender_index, rest) = rest.split_at_mut(4);
         let (unencrypted_ephemeral, rest) = rest.split_at_mut(32);
+        #[cfg(feature = "pqlvl1")]
         let (unencrypted_ephemeral_pq, rest) = rest.split_at_mut(PQ_PUBLIC_KEY_SIZE);
         let (mut encrypted_static, rest) = rest.split_at_mut(32 + 16);
         let (mut encrypted_timestamp, _) = rest.split_at_mut(12 + 16);
@@ -621,6 +734,7 @@ impl Handshake {
         // initiator.ephemeral_private = DH_GENERATE()
         let ephemeral_private = X25519EphemeralKey::new();
         // PQ_GENERATE_KEYPAIR()
+        #[cfg(feature = "pqlvl1")]
         let ephemeral_pq = PQKeyPair::new();
         // msg.message_type = 1
         // msg.reserved_zero = { 0, 0, 0 }
@@ -635,10 +749,12 @@ impl Handshake {
         // initiator.chaining_key = HMAC(temp, 0x1)
         chaining_key = HMAC!(HMAC!(chaining_key, unencrypted_ephemeral), [0x01]);
 
-        // PQ: eq
-        unencrypted_ephemeral_pq.copy_from_slice(&ephemeral_pq.public_key_bytes());
-        hash = HASH!(hash, unencrypted_ephemeral_pq);
-        chaining_key = HMAC!(HMAC!(chaining_key, unencrypted_ephemeral_pq), [0x01]);
+        #[cfg(feature = "pqlvl1")] {
+            // PQ: eq
+            unencrypted_ephemeral_pq.copy_from_slice(&ephemeral_pq.public_key_bytes());
+            hash = HASH!(hash, unencrypted_ephemeral_pq);
+            chaining_key = HMAC!(HMAC!(chaining_key, unencrypted_ephemeral_pq), [0x01]);
+        }
 
         // temp = HMAC(initiator.chaining_key, DH(initiator.ephemeral_private, responder.static_public))
         let ephemeral_shared = ephemeral_private.shared_key(&self.params.peer_static_public)?;
@@ -675,6 +791,7 @@ impl Handshake {
             chaining_key,
             hash,
             ephemeral_private,
+            #[cfg(feature = "pqlvl1")]
             ephemeral_private_pq: ephemeral_pq.secret_key,
             //ephemeral_private_pq: PQSecretKey { bytes: [0; PQ_SECRET_KEY_SIZE] },
             time_sent: time_now,
@@ -692,14 +809,52 @@ impl Handshake {
         }
 
         let state = std::mem::replace(&mut self.state, HandshakeState::None);
-        let (mut chaining_key, mut hash, peer_ephemeral_public, peer_ephemeral_public_pq, peer_index) = match state {
+
+        /*let mut chaining_key;
+        let mut hash;
+        let peer_ephemeral_public;
+        #[cfg(feature = "pqlvl1")]
+        let peer_ephemeral_public_pq;
+        let peer_index;
+        match state {
+            HandshakeState::InitSent {
+                ck, h, e_pub,
+                #[cfg(feature = "pqlvl1")]
+                e_pub_pq,
+                pi,
+                ..
+            } => {
+                chaining_key = ck;
+                hash = h;
+                peer_ephemeral_public = e_pub;
+                #[cfg(feature = "pqlvl1")]
+                {
+                    peer_ephemeral_public_pq = e_pub_eq;
+                }
+                peer_index = pi;
+            },
+            _ => {
+                panic!("Unexpected attempt to call send_handshake_response");
+            }
+
+        }*/
+
+        let (mut chaining_key, mut hash, peer_ephemeral_public,
+             peer_ephemeral_public_pq, peer_index) = match state {
             HandshakeState::InitReceived {
                 chaining_key,
                 hash,
                 peer_ephemeral_public,
+                #[cfg(feature = "pqlvl1")]
                 peer_ephemeral_public_pq,
                 peer_index,
-            } => (chaining_key, hash, peer_ephemeral_public, peer_ephemeral_public_pq, peer_index),
+            } => (chaining_key, hash,
+                  peer_ephemeral_public,
+                  #[cfg(feature = "pqlvl0")]
+                  PQPublicKey { bytes: [0; PQ_PUBLIC_KEY_SIZE] },
+                  #[cfg(feature = "pqlvl1")]
+                  peer_ephemeral_public_pq,
+                  peer_index),
             _ => {
                 panic!("Unexpected attempt to call send_handshake_response");
             }
@@ -709,6 +864,7 @@ impl Handshake {
         let (sender_index, rest) = rest.split_at_mut(4);
         let (receiver_index, rest) = rest.split_at_mut(4);
         let (unencrypted_ephemeral, rest) = rest.split_at_mut(32);
+        #[cfg(feature = "pqlvl1")]
         let (ephemeral_encaps, rest) = rest.split_at_mut(PQ_CIPHERTEXT_SIZE);
         let (mut encrypted_nothing, _) = rest.split_at_mut(16);
 
@@ -731,14 +887,16 @@ impl Handshake {
         // responder.chaining_key = HMAC(temp, 0x1)
         chaining_key = HMAC!(temp, [0x01]);
 
-        // PQ
-        let (ciphertext, shared_secret) = peer_ephemeral_public_pq.encaps();
-        chaining_key = HMAC!(chaining_key, ciphertext.as_bytes());
-        ephemeral_encaps.copy_from_slice(ciphertext.as_bytes());
-        hash = HASH!(hash, ephemeral_encaps);
-        // PQ: eqeq
-        let temp = HMAC!(chaining_key, shared_secret.as_bytes());
-        chaining_key = HMAC!(temp, [0x01]);
+        #[cfg(feature = "pqlvl1")] {
+            // PQ
+            let (ciphertext, shared_secret) = peer_ephemeral_public_pq.encaps();
+            chaining_key = HMAC!(chaining_key, ciphertext.as_bytes());
+            ephemeral_encaps.copy_from_slice(ciphertext.as_bytes());
+            hash = HASH!(hash, ephemeral_encaps);
+            // PQ: eqeq
+            let temp = HMAC!(chaining_key, shared_secret.as_bytes());
+            chaining_key = HMAC!(temp, [0x01]);
+        }
 
         // temp = HMAC(responder.chaining_key, DH(responder.ephemeral_private, initiator.ephemeral_public))
         let ephemeral_shared = ephemeral_private.shared_key(&peer_ephemeral_public)?;

@@ -22,8 +22,6 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-const PQ_CRYPTO_LEVEL: u64 = 1;
-
 const PEER_HANDSHAKE_RATE_LIMIT: u64 = 10; // The default value to use for rate limiting, when no other rate limiter is defined
 
 const IPV4_MIN_HEADER_SIZE: usize = 20;
@@ -103,8 +101,19 @@ const HANDSHAKE_RESP: MessageType = 2;
 const COOKIE_REPLY: MessageType = 3;
 const DATA: MessageType = 4;
 
-const HANDSHAKE_INIT_SZ: usize = 148 + PQ_PUBLIC_KEY_SIZE;
-const HANDSHAKE_RESP_SZ: usize = 92 + PQ_CIPHERTEXT_SIZE;
+#[cfg(feature = "pqlvl0")]
+const INIT_OFFSET: usize = 0;
+#[cfg(feature = "pqlvl0")]
+const RESP_OFFSET: usize = 0;
+#[cfg(all(feature = "pqlvl1", not(feature = "pqlvl2")))]
+const INIT_OFFSET: usize = PQ_PUBLIC_KEY_SIZE;
+#[cfg(any(feature = "pqlvl1", feature = "pqlvl2"))]
+const RESP_OFFSET: usize = PQ_CIPHERTEXT_SIZE;
+#[cfg(feature = "pqlvl2")]
+const INIT_OFFSET: usize = PQ_PUBLIC_KEY_SIZE + PQ_CIPHERTEXT_SIZE;
+
+const HANDSHAKE_INIT_SZ: usize = 148 + INIT_OFFSET;
+const HANDSHAKE_RESP_SZ: usize = 92 + RESP_OFFSET;
 const COOKIE_REPLY_SZ: usize = 64;
 const DATA_OVERHEAD_SZ: usize = 32;
 
@@ -112,7 +121,10 @@ const DATA_OVERHEAD_SZ: usize = 32;
 pub struct HandshakeInit<'a> {
     sender_idx: u32,
     unencrypted_ephemeral: &'a [u8],
+    #[cfg(feature = "pqlvl1")]
     unencrypted_ephemeral_pq: &'a [u8],
+    #[cfg(feature = "pqlvl2")]
+    static_encaps: &'a [u8],
     encrypted_static: &'a [u8],
     encrypted_timestamp: &'a [u8],
 }
@@ -122,6 +134,7 @@ pub struct HandshakeResponse<'a> {
     sender_idx: u32,
     pub receiver_idx: u32,
     unencrypted_ephemeral: &'a [u8],
+    #[cfg(feature = "pqlvl1")]
     ephemeral_encaps: &'a [u8],
     encrypted_nothing: &'a [u8],
 }
@@ -150,6 +163,7 @@ pub enum Packet<'a> {
 }
 
 impl Tunn {
+    #[cfg(not(feature = "pqlvl2"))]
     /// Create a new tunnel using own private key and the peer public key
     pub fn new(
         static_private: Arc<X25519SecretKey>,
@@ -190,6 +204,55 @@ impl Tunn {
 
         Ok(Box::new(tunn))
     }
+
+    #[cfg(feature = "pqlvl2")]
+    /// Create a new tunnel using own private key and the peer public key
+    pub fn new(
+        static_private: Arc<X25519SecretKey>,
+        static_private_pq: Arc<PQSecretKey>,
+        static_public_pq: Arc<PQPublicKey>,
+        peer_static_public: Arc<X25519PublicKey>,
+        peer_static_public_pq: Arc<PQPublicKey>,
+        preshared_key: Option<[u8; 32]>,
+        persistent_keepalive: Option<u16>,
+        index: u32,
+        rate_limiter: Option<Arc<RateLimiter>>,
+    ) -> Result<Box<Tunn>, &'static str> {
+        let static_public = Arc::new(static_private.public_key());
+
+        let tunn = Tunn {
+            handshake: spin::Mutex::new(
+                Handshake::new(
+                    static_private,
+                    static_private_pq,
+                    Arc::clone(&static_public),
+                    static_public_pq,
+                    peer_static_public,
+                    peer_static_public_pq,
+                    index << 8,
+                    preshared_key,
+                )
+                .map_err(|_| "Invalid parameters")?,
+            ),
+            sessions: Default::default(),
+            current: Default::default(),
+            tx_bytes: Default::default(),
+            rx_bytes: Default::default(),
+
+            packet_queue: spin::Mutex::new(VecDeque::new()),
+            timers: Timers::new(persistent_keepalive, rate_limiter.is_none()),
+
+            logger: None,
+            verbosity: Verbosity::None,
+
+            rate_limiter: rate_limiter.unwrap_or_else(|| {
+                Arc::new(RateLimiter::new(&static_public, PEER_HANDSHAKE_RATE_LIMIT))
+            }),
+        };
+
+        Ok(Box::new(tunn))
+    }
+
 
     /// Set the log function and logging level for the tunnel
     pub fn set_logger(&mut self, logger: LogFunction, verbosity: Verbosity) {
@@ -299,18 +362,20 @@ impl Tunn {
             (HANDSHAKE_INIT, HANDSHAKE_INIT_SZ) => Packet::HandshakeInit(HandshakeInit {
                 sender_idx: u32::from_le_bytes(make_array(&src[4..8])),
                 unencrypted_ephemeral: &src[8..40],
-                // TODO: make prettier
+                #[cfg(feature = "pqlvl1")]
                 unencrypted_ephemeral_pq: &src[40..40+PQ_PUBLIC_KEY_SIZE],
-                encrypted_static: &src[40+PQ_PUBLIC_KEY_SIZE..88+PQ_PUBLIC_KEY_SIZE],
-                encrypted_timestamp: &src[88+PQ_PUBLIC_KEY_SIZE..116+PQ_PUBLIC_KEY_SIZE],
+                #[cfg(feature = "pqlvl2")]
+                static_encaps: &src[40+PQ_PUBLIC_KEY_SIZE..40+INIT_OFFSET],
+                encrypted_static: &src[40+INIT_OFFSET..88+INIT_OFFSET],
+                encrypted_timestamp: &src[88+INIT_OFFSET..116+INIT_OFFSET],
             }),
             (HANDSHAKE_RESP, HANDSHAKE_RESP_SZ) => Packet::HandshakeResponse(HandshakeResponse {
                 sender_idx: u32::from_le_bytes(make_array(&src[4..8])),
                 receiver_idx: u32::from_le_bytes(make_array(&src[8..12])),
                 unencrypted_ephemeral: &src[12..44],
-                // TODO: make prettier
-                ephemeral_encaps: &src[44..44+PQ_CIPHERTEXT_SIZE],
-                encrypted_nothing: &src[44+PQ_CIPHERTEXT_SIZE..60+PQ_CIPHERTEXT_SIZE],
+                #[cfg(feature = "pqlvl1")]
+                ephemeral_encaps: &src[44..44+RESP_OFFSET],
+                encrypted_nothing: &src[44+RESP_OFFSET..60+RESP_OFFSET],
             }),
             (COOKIE_REPLY, COOKIE_REPLY_SZ) => Packet::PacketCookieReply(PacketCookieReply {
                 receiver_idx: u32::from_le_bytes(make_array(&src[4..8])),

@@ -161,7 +161,7 @@ pub unsafe extern "C" fn check_base64_encoded_x25519_key(key: *const c_char) -> 
 
 /// Allocate a new tunnel, return NULL on failure.
 /// Keys must be valid base64 encoded 32-byte keys.
-#[no_mangle]
+/*#[no_mangle]
 pub unsafe extern "C" fn new_tunnel(
     static_private: *const c_char,
     server_static_public: *const c_char,
@@ -220,7 +220,7 @@ pub unsafe extern "C" fn new_tunnel(
     });
 
     Box::into_raw(tunnel)
-}
+}*/
 
 /// Drops the Tunn object
 #[no_mangle]
