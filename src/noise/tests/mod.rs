@@ -25,6 +25,7 @@ pub mod tests {
 
     impl AtomicCounter {
         pub fn next(&self) -> usize {
+            self.ctr.compare_and_swap(60000, 30000, Ordering::Relaxed);
             self.ctr.fetch_add(1, Ordering::Relaxed)
         }
     }
@@ -393,7 +394,7 @@ pub mod tests {
                 .set_write_timeout(Some(Duration::from_millis(1000)))
                 .unwrap();
 
-            thread::spawn(move || loop {
+            thread::spawn(move || {
                 let data = read_ipv4_packet(&peer_iface_socket_sender);
                 let data_string = str::from_utf8(&data).unwrap().to_uppercase().into_bytes();
                 write_ipv4_packet(&peer_iface_socket_sender, &data_string);
