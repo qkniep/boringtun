@@ -107,10 +107,14 @@ const INIT_OFFSET: usize = 0;
 const RESP_OFFSET: usize = 0;
 #[cfg(all(feature = "pqlvl1", not(feature = "pqlvl2")))]
 const INIT_OFFSET: usize = PQ_PUBLIC_KEY_SIZE;
-#[cfg(any(feature = "pqlvl1", feature = "pqlvl2"))]
+#[cfg(all(feature = "pqlvl1", not(feature = "pqlvl3")))]
 const RESP_OFFSET: usize = PQ_CIPHERTEXT_SIZE;
-#[cfg(feature = "pqlvl2")]
+#[cfg(all(feature = "pqlvl2", not(feature = "pqlvl3")))]
 const INIT_OFFSET: usize = PQ_PUBLIC_KEY_SIZE + PQ_CIPHERTEXT_SIZE;
+#[cfg(feature = "pqlvl3")]
+const INIT_OFFSET: usize = PQ_PUBLIC_KEY_SIZE + PQ_CIPHERTEXT_SIZE + PQ_PUBLIC_KEY_SIZE+16;
+#[cfg(feature = "pqlvl3")]
+const RESP_OFFSET: usize = PQ_CIPHERTEXT_SIZE + PQ_CIPHERTEXT_SIZE;
 
 const HANDSHAKE_INIT_SZ: usize = 148 + INIT_OFFSET;
 const HANDSHAKE_RESP_SZ: usize = 92 + RESP_OFFSET;
@@ -125,6 +129,8 @@ pub struct HandshakeInit<'a> {
     unencrypted_ephemeral_pq: &'a [u8],
     #[cfg(feature = "pqlvl2")]
     static_encaps: &'a [u8],
+    #[cfg(feature = "pqlvl3")]
+    encrypted_static_pq: &'a [u8],
     encrypted_static: &'a [u8],
     encrypted_timestamp: &'a [u8],
 }
@@ -136,6 +142,8 @@ pub struct HandshakeResponse<'a> {
     unencrypted_ephemeral: &'a [u8],
     #[cfg(feature = "pqlvl1")]
     ephemeral_encaps: &'a [u8],
+    #[cfg(feature = "pqlvl3")]
+    static_encaps: &'a [u8],
     encrypted_nothing: &'a [u8],
 }
 
@@ -365,7 +373,9 @@ impl Tunn {
                 #[cfg(feature = "pqlvl1")]
                 unencrypted_ephemeral_pq: &src[40..40+PQ_PUBLIC_KEY_SIZE],
                 #[cfg(feature = "pqlvl2")]
-                static_encaps: &src[40+PQ_PUBLIC_KEY_SIZE..40+INIT_OFFSET],
+                static_encaps: &src[40+PQ_PUBLIC_KEY_SIZE..40+PQ_PUBLIC_KEY_SIZE+PQ_CIPHERTEXT_SIZE],
+                #[cfg(feature = "pqlvl3")]
+                encrypted_static_pq: &src[40+PQ_PUBLIC_KEY_SIZE+PQ_CIPHERTEXT_SIZE..40+INIT_OFFSET],
                 encrypted_static: &src[40+INIT_OFFSET..88+INIT_OFFSET],
                 encrypted_timestamp: &src[88+INIT_OFFSET..116+INIT_OFFSET],
             }),
@@ -374,7 +384,9 @@ impl Tunn {
                 receiver_idx: u32::from_le_bytes(make_array(&src[8..12])),
                 unencrypted_ephemeral: &src[12..44],
                 #[cfg(feature = "pqlvl1")]
-                ephemeral_encaps: &src[44..44+RESP_OFFSET],
+                ephemeral_encaps: &src[44..44+PQ_CIPHERTEXT_SIZE],
+                #[cfg(feature = "pqlvl3")]
+                static_encaps: &src[44+PQ_CIPHERTEXT_SIZE..44+RESP_OFFSET],
                 encrypted_nothing: &src[44+RESP_OFFSET..60+RESP_OFFSET],
             }),
             (COOKIE_REPLY, COOKIE_REPLY_SZ) => Packet::PacketCookieReply(PacketCookieReply {

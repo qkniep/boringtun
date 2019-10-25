@@ -10,6 +10,7 @@ pub use kyber768::*;
 
 
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct PQPublicKey {
     pub bytes: [u8; PQ_PUBLIC_KEY_SIZE],
 }

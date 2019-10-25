@@ -443,6 +443,18 @@ impl Handshake {
             );
         }
 
+        #[cfg(feature = "pqlvl2")] {
+            // PQ: read enc(sq)
+            let ciphertext = PQCiphertext::from(packet.static_encaps);
+            let shared_secret = ciphertext.decaps(&self.params.static_private_pq);
+            chaining_key = HMAC!(chaining_key, ciphertext.as_bytes());
+            hash = HASH!(hash, ciphertext.as_bytes());
+            // PQ: eqsq
+            let temp = HMAC!(chaining_key, shared_secret.as_bytes());
+            chaining_key = HMAC!(temp, [0x01]);
+        }
+
+        // es
         // temp = HMAC(initiator.chaining_key, DH(initiator.ephemeral_private, responder.static_public))
         let ephemeral_shared = self
             .params
@@ -453,6 +465,21 @@ impl Handshake {
         chaining_key = HMAC!(temp, [0x01]);
         // key = HMAC(temp, initiator.chaining_key || 0x2)
         let key = HMAC!(temp, chaining_key, [0x02]);
+
+        #[cfg(feature = "pqlvl3")] {
+            // read AEAD(sq)
+            let mut peer_static_public_pq_decrypted = [0u8; PQ_PUBLIC_KEY_SIZE];
+            OPEN!(
+                peer_static_public_pq_decrypted,
+                key,
+                0,
+                packet.encrypted_static_pq,
+                hash
+            )?;
+            self.params.peer_static_public_pq = Arc::new(
+                    PQPublicKey::from(&peer_static_public_pq_decrypted[..]));
+            hash = HASH!(hash, packet.encrypted_static_pq);
+        }
 
         let mut peer_static_public_decrypted = [0u8; KEY_LEN];
         // msg.encrypted_static = AEAD(key, 0, initiator.static_public, initiator.hash)
@@ -583,12 +610,23 @@ impl Handshake {
         chaining_key = HMAC!(temp, [0x01]);
 
         #[cfg(feature = "pqlvl1")] {
-            // PQ
+            // PQ read enc(eq)
             let ciphertext = PQCiphertext::from(packet.ephemeral_encaps);
             let shared_secret = ciphertext.decaps(&ephemeral_private_pq);
             chaining_key = HMAC!(chaining_key, ciphertext.as_bytes());
             hash = HASH!(hash, ciphertext.as_bytes());
             // PQ: eqeq
+            let temp = HMAC!(chaining_key, shared_secret.as_bytes());
+            chaining_key = HMAC!(temp, [0x01]);
+        }
+
+        #[cfg(feature = "pqlvl3")] {
+            // PQ read enc(sq)
+            let ciphertext = PQCiphertext::from(packet.static_encaps);
+            let shared_secret = ciphertext.decaps(&self.params.static_private_pq);
+            chaining_key = HMAC!(chaining_key, ciphertext.as_bytes());
+            hash = HASH!(hash, ciphertext.as_bytes());
+            // PQ: sqeq
             let temp = HMAC!(chaining_key, shared_secret.as_bytes());
             chaining_key = HMAC!(temp, [0x01]);
         }
@@ -720,6 +758,10 @@ impl Handshake {
         let (unencrypted_ephemeral, rest) = rest.split_at_mut(32);
         #[cfg(feature = "pqlvl1")]
         let (unencrypted_ephemeral_pq, rest) = rest.split_at_mut(PQ_PUBLIC_KEY_SIZE);
+        #[cfg(feature = "pqlvl2")]
+        let (static_encaps, rest) = rest.split_at_mut(PQ_CIPHERTEXT_SIZE);
+        #[cfg(feature = "pqlvl3")]
+        let (mut encrypted_static_pq, rest) = rest.split_at_mut(PQ_PUBLIC_KEY_SIZE + 16);
         let (mut encrypted_static, rest) = rest.split_at_mut(32 + 16);
         let (mut encrypted_timestamp, _) = rest.split_at_mut(12 + 16);
 
@@ -756,6 +798,18 @@ impl Handshake {
             chaining_key = HMAC!(HMAC!(chaining_key, unencrypted_ephemeral_pq), [0x01]);
         }
 
+        #[cfg(feature = "pqlvl2")] {
+            // PQ: enc(sq)
+            let (ciphertext, shared_secret) = self.params.peer_static_public_pq.encaps();
+            chaining_key = HMAC!(chaining_key, ciphertext.as_bytes());
+            static_encaps.copy_from_slice(ciphertext.as_bytes());
+            hash = HASH!(hash, static_encaps);
+            // PQ: eqsq
+            let temp = HMAC!(chaining_key, shared_secret.as_bytes());
+            chaining_key = HMAC!(temp, [0x01]);
+        }
+
+        // es
         // temp = HMAC(initiator.chaining_key, DH(initiator.ephemeral_private, responder.static_public))
         let ephemeral_shared = ephemeral_private.shared_key(&self.params.peer_static_public)?;
         let temp = HMAC!(chaining_key, ephemeral_shared);
@@ -763,6 +817,19 @@ impl Handshake {
         chaining_key = HMAC!(temp, [0x01]);
         // key = HMAC(temp, initiator.chaining_key || 0x2)
         let key = HMAC!(temp, chaining_key, [0x02]);
+
+        #[cfg(feature = "pqlvl3")] {
+            // PQ: AEAD(sq)
+            SEAL!(
+                encrypted_static_pq,
+                key,
+                0,
+                self.params.static_public_pq.as_bytes(),
+                hash
+            );
+            hash = HASH!(hash, encrypted_static_pq);
+        }
+
         // msg.encrypted_static = AEAD(key, 0, initiator.static_public, initiator.hash)
         SEAL!(
             encrypted_static,
@@ -866,6 +933,8 @@ impl Handshake {
         let (unencrypted_ephemeral, rest) = rest.split_at_mut(32);
         #[cfg(feature = "pqlvl1")]
         let (ephemeral_encaps, rest) = rest.split_at_mut(PQ_CIPHERTEXT_SIZE);
+        #[cfg(feature = "pqlvl3")]
+        let (static_encaps, rest) = rest.split_at_mut(PQ_CIPHERTEXT_SIZE);
         let (mut encrypted_nothing, _) = rest.split_at_mut(16);
 
         // responder.ephemeral_private = DH_GENERATE()
@@ -888,12 +957,23 @@ impl Handshake {
         chaining_key = HMAC!(temp, [0x01]);
 
         #[cfg(feature = "pqlvl1")] {
-            // PQ
+            // PQ: enc(eq)
             let (ciphertext, shared_secret) = peer_ephemeral_public_pq.encaps();
             chaining_key = HMAC!(chaining_key, ciphertext.as_bytes());
             ephemeral_encaps.copy_from_slice(ciphertext.as_bytes());
             hash = HASH!(hash, ephemeral_encaps);
             // PQ: eqeq
+            let temp = HMAC!(chaining_key, shared_secret.as_bytes());
+            chaining_key = HMAC!(temp, [0x01]);
+        }
+
+        #[cfg(feature = "pqlvl3")] {
+            // PQ: enc(sq)
+            let (ciphertext, shared_secret) = self.params.peer_static_public_pq.encaps();
+            chaining_key = HMAC!(chaining_key, ciphertext.as_bytes());
+            static_encaps.copy_from_slice(ciphertext.as_bytes());
+            hash = HASH!(hash, static_encaps);
+            // PQ: sqeq
             let temp = HMAC!(chaining_key, shared_secret.as_bytes());
             chaining_key = HMAC!(temp, [0x01]);
         }

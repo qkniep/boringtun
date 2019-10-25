@@ -1,7 +1,7 @@
 // Copyright (c) 2019 Cloudflare, Inc. All rights reserved.
 // SPDX-License-Identifier: BSD-3-Clause
 
-use super::{make_array, AllowedIP, Device, Error, SocketAddr, X25519PublicKey, X25519SecretKey};
+use super::{make_array, AllowedIP, Device, Error, SocketAddr, PQPublicKey, PQSecretKey, PQ_PUBLIC_KEY_SIZE, X25519PublicKey, X25519SecretKey};
 use crate::dev_lock::LockReadGuard;
 use crate::device::drop_privileges::*;
 use crate::device::Action;
@@ -234,6 +234,7 @@ fn api_set_peer(
 ) -> i32 {
     let mut cmd = String::new();
 
+    let mut pub_key_pq = PQPublicKey { bytes: [0; PQ_PUBLIC_KEY_SIZE] };
     let mut remove = false;
     let mut replace_ips = false;
     let mut endpoint = None;
@@ -246,6 +247,7 @@ fn api_set_peer(
         if cmd.is_empty() {
             d.update_peer(
                 pub_key,
+                pub_key_pq,
                 remove,
                 replace_ips,
                 endpoint,
@@ -294,6 +296,7 @@ fn api_set_peer(
                     // Indicates a new peer section. Commit changes for current peer, and continue to next peer
                     d.update_peer(
                         pub_key,
+                        pub_key_pq,
                         remove,
                         replace_ips,
                         endpoint,

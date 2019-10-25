@@ -38,6 +38,7 @@ use std::thread;
 use std::thread::JoinHandle;
 
 use crate::allowed_ips::*;
+use crate::crypto::pqcrypto::*;
 use crate::crypto::x25519::*;
 use crate::dev_lock::*;
 use crate::noise::errors::*;
@@ -112,6 +113,8 @@ impl Default for DeviceConfig {
 
 pub struct Device {
     key_pair: Option<(Arc<X25519SecretKey>, Arc<X25519PublicKey>)>,
+    #[cfg(feature = "pqlvl2")]
+    key_pair_pq: Option<(Arc<PQSecretKey>, Arc<PQPublicKey>)>,
     queue: Arc<EventPoll<Handler>>,
 
     listen_port: u16,
@@ -272,6 +275,7 @@ impl Device {
     fn update_peer(
         &mut self,
         pub_key: X25519PublicKey,
+        pub_key_pq: PQPublicKey,
         remove: bool,
         _replace_ips: bool,
         endpoint: Option<SocketAddr>,
@@ -280,6 +284,7 @@ impl Device {
         preshared_key: Option<[u8; 32]>,
     ) {
         let pub_key = Arc::new(pub_key);
+        let pub_key_pq = Arc::new(pub_key_pq);
 
         if remove {
             // Completely remove a peer
@@ -297,10 +302,17 @@ impl Device {
             .key_pair
             .as_ref()
             .expect("Private key must be set first");
+        let device_key_pair_pq = self
+            .key_pair_pq
+            .as_ref()
+            .expect("Private key must be set first");
 
         let mut tunn = Tunn::new(
             Arc::clone(&device_key_pair.0),
+            Arc::clone(&device_key_pair_pq.0),
+            Arc::clone(&device_key_pair_pq.1),
             Arc::clone(&pub_key),
+            Arc::clone(&pub_key_pq),
             preshared_key,
             keepalive,
             next_index,
@@ -349,6 +361,7 @@ impl Device {
             yield_notice: Default::default(),
             fwmark: Default::default(),
             key_pair: Default::default(),
+            key_pair_pq: Default::default(),
             listen_port: Default::default(),
             next_index: Default::default(),
             peers: Default::default(),

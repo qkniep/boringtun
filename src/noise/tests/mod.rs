@@ -4,8 +4,8 @@
 //#[cfg(test)]
 pub mod tests {
     use super::super::*;
-    use crate::crypto::x25519::*;
     use crate::crypto::pqcrypto::*;
+    use crate::crypto::x25519::*;
     use base64::encode;
     use std::fs;
     use std::fs::File;
@@ -25,6 +25,7 @@ pub mod tests {
 
     impl AtomicCounter {
         pub fn next(&self) -> usize {
+            self.ctr.compare_and_swap(60000, 30000, Ordering::Relaxed);
             self.ctr.fetch_add(1, Ordering::Relaxed)
         }
     }
@@ -73,6 +74,13 @@ pub mod tests {
         let len = socket.recv(&mut data).unwrap();
         packet.extend_from_slice(&data[IPV4_MIN_HEADER_SIZE..len]);
         packet
+        /*match socket.recv(&mut data) {
+            Ok(len) => {
+                packet.extend_from_slice(&data[IPV4_MIN_HEADER_SIZE..len]);
+                packet
+            },
+            Err(_) => read_ipv4_packet(socket)
+        }*/
     }
 
     // Appends an IPv4 header to a buffer and writes the resulting "packet"
@@ -168,7 +176,10 @@ pub mod tests {
     fn wireguard_test_peer(
         network_socket: UdpSocket,
         static_private: &str,
+        static_private_pq: PQSecretKey,
+        static_public_pq: PQPublicKey,
         peer_static_public: &str,
+        peer_static_public_pq: PQPublicKey,
         logger: Box<dyn Fn(&str) + Send>,
         close: Arc<AtomicBool>,
     ) -> UdpSocket {
@@ -177,7 +188,10 @@ pub mod tests {
 
         let mut peer = Tunn::new(
             Arc::new(static_private),
+            Arc::new(static_private_pq),
+            Arc::new(static_public_pq),
             Arc::new(peer_static_public),
+            Arc::new(peer_static_public_pq),
             None,
             None,
             100,
@@ -315,14 +329,13 @@ pub mod tests {
     }
 
     #[cfg(feature = "pqlvl2")]
-    fn key_pair() -> (String, String, String, String) {
+    fn key_pair() -> (String, String, PQSecretKey, PQPublicKey) {
         let secret_key = X25519SecretKey::new();
         let public_key = secret_key.public_key();
         let pq_key_pair = PQKeyPair::new();
 
         (encode(secret_key.as_bytes()), encode(public_key.as_bytes()),
-         encode(pq_key_pair.secret_key.as_bytes()),
-         encode(pq_key_pair.public_key.as_bytes()))
+         pq_key_pair.secret_key, pq_key_pair.public_key)
     }
 
     fn wireguard_test_pair() -> (UdpSocket, UdpSocket, Arc<AtomicBool>) {
@@ -355,10 +368,10 @@ pub mod tests {
             let s_iface = wireguard_test_peer(
                 s_sock,
                 &server_pair.0,
-                &server_pair.2,
-                &server_pair.3,
+                server_pair.2,
+                server_pair.3,
                 &client_pair.1,
-                &client_pair.3,
+                client_pair.3,
                 Box::new(|e: &str| eprintln!("server: {}", e)),
                 close.clone(),
             );
@@ -366,10 +379,10 @@ pub mod tests {
             let c_iface = wireguard_test_peer(
                 c_sock,
                 &client_pair.0,
-                &client_pair.2,
-                &client_pair.3,
+                client_pair.2,
+                client_pair.3,
                 &server_pair.1,
-                &server_pair.3,
+                server_pair.3,
                 Box::new(|e: &str| eprintln!("client: {}", e)),
                 close.clone(),
             );
@@ -393,7 +406,7 @@ pub mod tests {
                 .set_write_timeout(Some(Duration::from_millis(1000)))
                 .unwrap();
 
-            thread::spawn(move || loop {
+            thread::spawn(move || {
                 let data = read_ipv4_packet(&peer_iface_socket_sender);
                 let data_string = str::from_utf8(&data).unwrap().to_uppercase().into_bytes();
                 write_ipv4_packet(&peer_iface_socket_sender, &data_string);
@@ -478,7 +491,7 @@ pub mod tests {
         }
     }
 
-    #[test]
+    /*#[test]
     #[ignore]
     fn wireguard_interop() {
         // Test the connection with wireguard-go is successfully established
@@ -569,5 +582,5 @@ pub mod tests {
                 format!("This is a test message {}", i).as_bytes()
             );
         }
-    }
+    }*/
 }
