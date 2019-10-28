@@ -381,7 +381,7 @@ pub mod tests {
     }
 
     //#[test]
-    pub fn wireguard_handshake() {
+    pub fn wireguard_handshake(n: u32) {
         // Test the connection is successfully established and some packets are passed around
         {
             let (peer_iface_socket_sender, client_iface_socket_sender, close) =
@@ -394,7 +394,7 @@ pub mod tests {
                 .set_write_timeout(Some(Duration::from_millis(1000)))
                 .unwrap();
 
-            thread::spawn(move || {
+            thread::spawn(move || for _i in 0..n {
                 let data = read_ipv4_packet(&peer_iface_socket_sender);
                 let data_string = str::from_utf8(&data).unwrap().to_uppercase().into_bytes();
                 write_ipv4_packet(&peer_iface_socket_sender, &data_string);
@@ -407,11 +407,11 @@ pub mod tests {
             }
 
             for _i in 0..64 {*/
-            //for _i in 0..2 {
+            for _i in 0..n {
                 write_ipv4_packet(&client_iface_socket_sender, b"check");
                 let response = read_ipv4_packet(&client_iface_socket_sender);
                 assert_eq!(&response, b"CHECK");
-            //}
+            }
 
             close.store(true, Ordering::Relaxed);
         }
