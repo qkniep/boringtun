@@ -9,7 +9,7 @@ fn bench_handshake(c: &mut Criterion) {
             |b, param| b.iter(|| {
                 black_box(wireguard_handshake(*param));
             }),
-            vec![1u32, 5u32, 10u32, 20u32, 40u32, 60u32, 80u32, 100u32],
+            vec![0u32, 1u32, 10u32, 20u32, 40u32, 60u32, 80u32, 100u32],
         )
     );
     //c.bench_function("WireGuard Handshake", |b| b.iter(|| {
