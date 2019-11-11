@@ -5,8 +5,8 @@ use std::fmt;
 
 mod tests;
 
-mod kyber768;
-pub use kyber768::*;
+mod firesaber;
+pub use firesaber::*;
 
 
 #[repr(C)]
