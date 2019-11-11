@@ -5,8 +5,8 @@ use std::fmt;
 
 mod tests;
 
-mod sidhp751;
-pub use sidhp751::*;
+mod kyber768;
+pub use kyber768::*;
 
 
 #[repr(C)]
