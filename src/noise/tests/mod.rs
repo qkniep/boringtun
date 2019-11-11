@@ -5,7 +5,6 @@
 pub mod tests {
     use super::super::*;
     use crate::crypto::x25519::*;
-    use crate::crypto::pqcrypto::*;
     use base64::encode;
     use std::fs;
     use std::fs::File;
@@ -16,7 +15,7 @@ pub mod tests {
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::Arc;
     use std::thread;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     // Simple counter, atomically increasing by one each call
     struct AtomicCounter {
@@ -417,6 +416,42 @@ pub mod tests {
         }
     }
 
+    pub fn wireguard_handshake_custom() -> Duration {
+        let mut dt;
+        // Test the connection is successfully established and some packets are passed around
+        {
+            let (peer_iface_socket_sender, client_iface_socket_sender, close) =
+                wireguard_test_pair();
+
+            client_iface_socket_sender
+                .set_read_timeout(Some(Duration::from_millis(1000)))
+                .unwrap();
+            client_iface_socket_sender
+                .set_write_timeout(Some(Duration::from_millis(1000)))
+                .unwrap();
+
+            thread::spawn(move || for _ in 0..2 {
+                let data = read_ipv4_packet(&peer_iface_socket_sender);
+                let data_string = str::from_utf8(&data).unwrap().to_uppercase().into_bytes();
+                write_ipv4_packet(&peer_iface_socket_sender, &data_string);
+            });
+
+            let mut start = Instant::now();
+            write_ipv4_packet(&client_iface_socket_sender, b"check");
+            let response = read_ipv4_packet(&client_iface_socket_sender);
+            assert_eq!(&response, b"CHECK");
+            dt = start.elapsed();
+
+            start = Instant::now();
+            write_ipv4_packet(&client_iface_socket_sender, b"check");
+            let response = read_ipv4_packet(&client_iface_socket_sender);
+            assert_eq!(&response, b"CHECK");
+            dt -= start.elapsed();
+
+            close.store(true, Ordering::Relaxed);
+        }
+        dt
+    }
     struct WireGuardExt {
         conf_file_name: String,
         port: u16,
