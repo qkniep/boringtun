@@ -5,8 +5,8 @@ use std::fmt;
 
 mod tests;
 
-mod firesaber;
-pub use firesaber::*;
+mod sidhp751comp;
+pub use sidhp751comp::*;
 
 
 #[repr(C)]
@@ -117,8 +117,8 @@ impl PQKeyPair {
         let mut public_key = PQPublicKey { bytes: [0; PQ_PUBLIC_KEY_SIZE] };
         let mut secret_key = PQSecretKey { bytes: [0; PQ_SECRET_KEY_SIZE] };
         unsafe {
-            pq_keypair(&mut public_key.bytes[0],
-                       &mut secret_key.bytes[0]);
+            while pq_keypair(&mut public_key.bytes[0],
+                             &mut secret_key.bytes[0]) != 0 {};
         }
         //println!("PUBLIC PQ KEY:\n{:?}\n\nSECRET PQ KEY:\n{:?}", public_key, secret_key);
         PQKeyPair { public_key, secret_key }
