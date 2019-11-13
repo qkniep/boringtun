@@ -5,8 +5,8 @@ use std::fmt;
 
 mod tests;
 
-mod sidhp751;
-pub use sidhp751::*;
+mod ntru4096;
+pub use ntru4096::*;
 
 
 #[repr(C)]

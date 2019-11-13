@@ -430,23 +430,17 @@ pub mod tests {
                 .set_write_timeout(Some(Duration::from_millis(1000)))
                 .unwrap();
 
-            thread::spawn(move || for _ in 0..2 {
+            thread::spawn(move || {
                 let data = read_ipv4_packet(&peer_iface_socket_sender);
                 let data_string = str::from_utf8(&data).unwrap().to_uppercase().into_bytes();
                 write_ipv4_packet(&peer_iface_socket_sender, &data_string);
             });
 
-            let mut start = Instant::now();
+            let start = Instant::now();
             write_ipv4_packet(&client_iface_socket_sender, b"check");
             let response = read_ipv4_packet(&client_iface_socket_sender);
             assert_eq!(&response, b"CHECK");
             dt = start.elapsed();
-
-            start = Instant::now();
-            write_ipv4_packet(&client_iface_socket_sender, b"check");
-            let response = read_ipv4_packet(&client_iface_socket_sender);
-            assert_eq!(&response, b"CHECK");
-            dt -= start.elapsed();
 
             close.store(true, Ordering::Relaxed);
         }
