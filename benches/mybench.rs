@@ -6,15 +6,15 @@ fn bench_handshake(c: &mut Criterion) {
     c.bench(
         "Level 3",
         ParameterizedBenchmark::new(
-            "Handshake",
+            "NPackets",
             |b, param| b.iter(|| {
                 black_box(wireguard_handshake(*param));
             }),
-            vec![0u32, 1u32, 10u32, 20u32, 40u32, 60u32, 80u32, 100u32],
+            vec![65536u32],
         )
     );
 
-    c.bench_function("Custom Handshake", |b| b.iter_custom(|iters| {
+    c.bench_function("Handshake", |b| b.iter_custom(|iters| {
         let mut total_time = Duration::default();
         for _ in 0..iters {
             total_time += black_box(wireguard_handshake_custom());

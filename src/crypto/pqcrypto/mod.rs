@@ -5,8 +5,8 @@ use std::fmt;
 
 mod tests;
 
-mod sidhp751comp;
-pub use sidhp751comp::*;
+mod firesaber;
+pub use firesaber::*;
 
 
 #[repr(C)]
