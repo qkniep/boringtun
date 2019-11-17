@@ -30,11 +30,6 @@ mod kyber1024;
 pub use kyber1024::*;
 ```
 
-```bash
-cargo bench --features pqlvl1 pqlvl2 -- Handshake --measurement-time 60 --sample-size 100
-cargo bench --features pqlvl1 pqlvl2 pqlvl3 -- Handshake --measurement-time 60 --sample-size 100
-```
-
 The string `kyber1024` has to be replace with on of the supported values for the cryptographic primitive:
 * `kyber512`, `kyber768`, `kyber1024`
 * `lightsaber`, `firesaber`
