@@ -1,3 +1,6 @@
+// Copyright (c) 2019 Quentin Kniep. All rights reserved.
+// SPDX-License-Identifier: BSD-3-Clause
+
 use boringtun::noise::tests::tests::{wireguard_handshake_1, wireguard_handshake_n};
 use criterion::{black_box, criterion_group, criterion_main, Criterion, ParameterizedBenchmark};
 use std::time::Duration;
