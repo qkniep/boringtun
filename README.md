@@ -3,6 +3,12 @@ Proof-of-concept implementation for the Bachelor's thesis "Post-Quantum Cryptogr
 This is a user space implementation of the [WireGuard<sup>®</sup>](https://www.wireguard.com/) protocol and modified post-quantum protocols.
 This branch implements the original WireGuard protocol and the L1 handshake as explained in the thesis.
 
+To use the L2 and L3 handshake protocols,
+you have to switch to the `lvl23` branch:
+```bash
+git checkout lvl23
+```
+
 Benchmarks are run with the following commands:
 ```bash
 cargo bench --features pqlvl0 -- Handshake --measurement-time 60 --sample-size 100
@@ -40,6 +46,10 @@ The string `kyber1024` has to be replace with on of the supported values for the
 ## Dependencies
 The [liboqs](https://github.com/open-quantum-safe/liboqs/) C-library needs to be installed to use the project,
 as it is used via FFI bindings.
+
+## License
+
+The project is licensed under the [3-Clause BSD License](https://opensource.org/licenses/BSD-3-Clause).
 
 BELOW IS THE ORIGINAL README FILE OF THE BORINGTUN PROJECT.
 
