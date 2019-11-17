@@ -5,8 +5,8 @@ use std::fmt;
 
 mod tests;
 
-mod ntru4096;
-pub use ntru4096::*;
+mod kyber1024;
+pub use kyber1024::*;
 
 
 #[repr(C)]

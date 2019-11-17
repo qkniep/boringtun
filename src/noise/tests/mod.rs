@@ -380,7 +380,8 @@ pub mod tests {
     }
 
     //#[test]
-    pub fn wireguard_handshake(n: u32) {
+    pub fn wireguard_handshake_n(n: u32) -> Duration {
+        let dt;
         // Test the connection is successfully established and some packets are passed around
         {
             let (peer_iface_socket_sender, client_iface_socket_sender, close) =
@@ -406,18 +407,21 @@ pub mod tests {
             }
 
             for _i in 0..64 {*/
+            let start = Instant::now();
             for _i in 0..n {
                 write_ipv4_packet(&client_iface_socket_sender, b"check");
                 let response = read_ipv4_packet(&client_iface_socket_sender);
                 assert_eq!(&response, b"CHECK");
             }
+            dt = start.elapsed();
 
             close.store(true, Ordering::Relaxed);
         }
+        dt
     }
 
-    pub fn wireguard_handshake_custom() -> Duration {
-        let mut dt;
+    pub fn wireguard_handshake_1() -> Duration {
+        let dt;
         // Test the connection is successfully established and some packets are passed around
         {
             let (peer_iface_socket_sender, client_iface_socket_sender, close) =
