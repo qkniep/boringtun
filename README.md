@@ -1,3 +1,48 @@
+# PQ-WG in Rust
+Proof-of-concept implementation for the Bachelor's thesis "Post-Quantum Cryptography in WireGuard VPN".
+This is a user space implementation of the [WireGuard<sup>®</sup>](https://www.wireguard.com/) protocol and modified post-quantum protocols.
+This branch implements the L2 and L3 handshakes as explained in the thesis.
+
+Benchmarks are run with the following commands:
+```bash
+cargo bench --features pqlvl1 pqlvl2 -- Handshake --measurement-time 60 --sample-size 100
+cargo bench --features pqlvl1 pqlvl2 pqlvl3 -- Handshake --measurement-time 60 --sample-size 100
+
+cargo bench --features pqlvl1 pqlvl2 -- NPackets --measurement-time 60 --sample-size 100
+cargo bench --features pqlvl1 pqlvl2 pqlvl3 -- NPackets --measurement-time 60 --sample-size 100
+```
+Where `--measurement-time` and `--sample-size` are the Criterion.rs parameters,
+which are in this example set to 60 seconds and 100 samples respectively.
+
+The parmeter `pqlvl2` makes the benchmark use the L2 handshake protoocl,
+and `pqlvl3` uses the L3 handshake protocol.
+And where `Handshake` measures just the handshake and on packet sent over the tunnel,
+and `NPackets` runs a series of tests with different numbers of packets,
+which can be specified in [`benches/mybench.rs`](benches/mybench.rs),
+by changing the following vector to be the numbers of packets for the different runs:
+```rust
+vec![1u32, 2000u32],
+```
+
+To switch the PQ cryptographic primitive, the file [`src/crypto/pqcrypto/mod.rs`](src/crypto/pqcrypto/mod.rs) has to be changed in the following lines:
+```rust
+mod kyber1024;
+pub use kyber1024::*;
+```
+
+The string `kyber1024` has to be replace with on of the supported values for the cryptographic primitive:
+* `kyber512`, `kyber768`, `kyber1024`
+* `lightsaber`, `firesaber`
+* `newhope512`, `newhope1024`
+* `ntru2048`, `ntru4096`
+* `sidhp434`, `sidhp751`, `sidhp751comp`
+
+## Dependencies
+The [liboqs](https://github.com/open-quantum-safe/liboqs/) C-library needs to be installed to use the project,
+as it is used via FFI bindings.
+
+BELOW IS THE ORIGINAL README FILE OF THE BORINGTUN PROJECT.
+
 ![boringtun logo banner](./banner.png)
 
 # BoringTun
