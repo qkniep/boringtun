@@ -1,5 +1,5 @@
-// Copyright (C) 2019 Quentin Kniep <kniepque@hu-berlin.de>
-// Distributed under terms of the MIT license.
+// Copyright (c) 2019 Quentin Kniep. All rights reserved.
+// SPDX-License-Identifier: BSD-3-Clause
 
 use std::fmt;
 
